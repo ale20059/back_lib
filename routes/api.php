@@ -10,58 +10,62 @@ use App\Http\Controllers\API\BarcodeScannerController;
 use App\Http\Controllers\API\ImageController;
 use App\Http\Controllers\API\DashboardController;
 use App\Http\Controllers\API\InventoryMovementController;
-use Illuminate\Support\Facades\Storage;
 
 // Rutas públicas
-
-// Ruta de prueba para verificar storage
-
 Route::post('/login', [AuthController::class, 'login']);
 
 // Rutas protegidas (requieren token)
 Route::middleware('auth:sanctum')->group(function () {
 
-
+    // ===== AUTENTICACIÓN =====
     Route::post('/register', [AuthController::class, 'register']);
-    // Auth
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::put('/profile', [AuthController::class, 'updateProfile']);
 
-    // Dashboard
+    // ===== GESTIÓN DE USUARIOS (SOLO ADMIN) =====
+    Route::get('/users', [AuthController::class, 'index']);
+    Route::get('/users/{id}', [AuthController::class, 'show']);
+    Route::put('/users/{id}', [AuthController::class, 'update']);
+    Route::delete('/users/{id}', [AuthController::class, 'destroy']);
+    Route::put('/users/{id}/toggle-active', [AuthController::class, 'toggleActive']);
+
+    // ===== DASHBOARD =====
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/sales-report', [DashboardController::class, 'salesReport']);
 
-    // Productos
+    // ===== PRODUCTOS =====
     Route::apiResource('products', ProductController::class);
     Route::post('/products/{id}/update-stock', [ProductController::class, 'updateStock']);
+    Route::get('/products/trashed', [ProductController::class, 'trashed']);
+    Route::post('/products/{id}/restore', [ProductController::class, 'restore']);
+    Route::delete('/products/{id}/force-delete', [ProductController::class, 'forceDelete']);
 
-    // Proveedores
+    // ===== PROVEEDORES =====
     Route::apiResource('suppliers', SupplierController::class);
 
-    // Categorías
+    // ===== CATEGORÍAS =====
     Route::apiResource('categories', CategoryController::class);
 
-    // Ventas
+    // ===== VENTAS =====
     Route::apiResource('sales', SaleController::class);
     Route::post('/sales/{id}/cancel', [SaleController::class, 'cancel']);
     Route::get('/sales/{id}/invoice-data', [SaleController::class, 'getInvoiceData']);
+    Route::get('/sales/by-invoice/{invoiceNumber}', [SaleController::class, 'findByInvoice']);
+    Route::post('/sales/{saleId}/refund', [SaleController::class, 'refundItems']);
 
-    // Escáner de código de barras
+    // ===== ESCÁNER DE CÓDIGO DE BARRAS =====
     Route::post('/barcode/scan', [BarcodeScannerController::class, 'scan']);
     Route::post('/barcode/scan-multiple', [BarcodeScannerController::class, 'scanMultiple']);
     Route::get('/barcode/search', [BarcodeScannerController::class, 'searchByPartialBarcode']);
 
-    // Imágenes
+    // ===== IMÁGENES =====
     Route::post('/images/upload', [ImageController::class, 'upload']);
     Route::put('/images/{id}/set-main', [ImageController::class, 'setMain']);
     Route::delete('/images/{id}', [ImageController::class, 'destroy']);
     Route::post('/images/reorder', [ImageController::class, 'reorder']);
 
-    // Inventario
+    // ===== INVENTARIO =====
     Route::get('/inventory-movements', [InventoryMovementController::class, 'index']);
     Route::get('/inventory-movements/product/{productId}', [InventoryMovementController::class, 'byProduct']);
-    // En routes/api.php
-    Route::get('/sales/by-invoice/{invoiceNumber}', [SaleController::class, 'findByInvoice']);
-    Route::post('/sales/{saleId}/refund', [SaleController::class, 'refundItems']);
 });

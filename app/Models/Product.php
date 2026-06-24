@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -28,6 +29,8 @@ class Product extends Model
         'stock' => 'integer',
         'is_active' => 'boolean',
     ];
+
+    protected $dates = ['deleted_at'];
 
     // Relaciones
     public function supplier()

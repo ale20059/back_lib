@@ -186,4 +186,169 @@ class AuthController extends Controller
             'message' => 'Sesión cerrada exitosamente',
         ]);
     }
+
+    public function index(Request $request)
+    {
+        // Verificar que el usuario autenticado sea Administrador
+        if ($request->user()->position !== 'Administrador') {
+            return response()->json([
+                'message' => 'No autorizado. Solo administradores pueden ver la lista de usuarios.'
+            ], 403);
+        }
+
+        $users = User::with('images')->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $users
+        ]);
+    }
+
+    /**
+     * Obtener un usuario específico (SOLO ADMIN)
+     */
+    public function show(Request $request, $id)
+    {
+        if ($request->user()->position !== 'Administrador') {
+            return response()->json([
+                'message' => 'No autorizado.'
+            ], 403);
+        }
+
+        $user = User::with('images')->findOrFail($id);
+        return response()->json([
+            'success' => true,
+            'data' => $user
+        ]);
+    }
+
+    /**
+     * Actualizar un usuario (SOLO ADMIN)
+     */
+    public function update(Request $request, $id)
+    {
+        if ($request->user()->position !== 'Administrador') {
+            return response()->json([
+                'message' => 'No autorizado.'
+            ], 403);
+        }
+
+        $user = User::findOrFail($id);
+
+        $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $id,
+            'password' => 'nullable|string|min:6',
+            'phone' => 'nullable|string',
+            'position' => 'nullable|string',
+            'is_active' => 'sometimes|boolean',
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        $data = $request->only(['name', 'email', 'phone', 'position']);
+
+        // Si se envía password, actualizarla
+        if ($request->filled('password')) {
+            $data['password'] = Hash::make($request->password);
+        }
+
+        // Si se envía is_active
+        if ($request->has('is_active')) {
+            $data['is_active'] = $request->is_active;
+        }
+
+        $user->update($data);
+
+        // Manejar imagen
+        if ($request->hasFile('image')) {
+            $oldImage = $user->images()->where('is_main', true)->first();
+            if ($oldImage) {
+                $relativePath = str_replace('/storage/', '', $oldImage->url);
+                Storage::disk('public')->delete($relativePath);
+                $oldImage->delete();
+            }
+
+            $file = $request->file('image');
+            $path = $file->store("users/{$user->id}", 'public');
+
+            $user->images()->create([
+                'url' => Storage::url($path),
+                'file_name' => $file->getClientOriginalName(),
+                'file_size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'is_main' => true,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuario actualizado exitosamente',
+            'data' => $user->load('images')
+        ]);
+    }
+
+    /**
+     * Eliminar un usuario (SOLO ADMIN)
+     */
+    public function destroy(Request $request, $id)
+    {
+        if ($request->user()->position !== 'Administrador') {
+            return response()->json([
+                'message' => 'No autorizado.'
+            ], 403);
+        }
+
+        // No permitir eliminar a sí mismo
+        if ($request->user()->id == $id) {
+            return response()->json([
+                'message' => 'No puedes eliminar tu propia cuenta.'
+            ], 400);
+        }
+
+        $user = User::findOrFail($id);
+
+        // Eliminar imágenes asociadas
+        foreach ($user->images as $image) {
+            $relativePath = str_replace('/storage/', '', $image->url);
+            Storage::disk('public')->delete($relativePath);
+            $image->delete();
+        }
+
+        $user->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Usuario eliminado exitosamente'
+        ]);
+    }
+
+    /**
+     * Activar/Desactivar un usuario (SOLO ADMIN)
+     */
+    public function toggleActive(Request $request, $id)
+    {
+        if ($request->user()->position !== 'Administrador') {
+            return response()->json([
+                'message' => 'No autorizado.'
+            ], 403);
+        }
+
+        $user = User::findOrFail($id);
+
+        // No permitir desactivar a sí mismo
+        if ($request->user()->id == $id) {
+            return response()->json([
+                'message' => 'No puedes desactivar tu propia cuenta.'
+            ], 400);
+        }
+
+        $user->is_active = !$user->is_active;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => $user->is_active ? 'Usuario activado' : 'Usuario desactivado',
+            'data' => $user
+        ]);
+    }
 }

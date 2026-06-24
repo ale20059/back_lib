@@ -11,14 +11,17 @@ use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
-    // Listar productos con filtros y fotos
+    // Listar productos con filtros y fotos (incluye eliminados si se solicita)
     public function index(Request $request)
     {
-        // El secreto está en este 'with'. Cargamos la categoría, proveedor
-        // y solo la imagen que marcamos como 'is_main'.
         $query = Product::with(['supplier', 'category', 'images' => function ($q) {
             $q->where('is_main', true);
         }]);
+
+        // Si se solicita ver eliminados
+        if ($request->has('trashed') && $request->trashed == 'true') {
+            $query->onlyTrashed();
+        }
 
         // Filtros de búsqueda
         if ($request->has('search')) {
@@ -49,6 +52,19 @@ class ProductController extends Controller
         return response()->json($products);
     }
 
+    // Obtener solo productos eliminados (Soft Delete)
+    public function trashed(Request $request)
+    {
+        $products = Product::onlyTrashed()
+            ->with(['supplier', 'category', 'images' => function ($q) {
+                $q->where('is_main', true);
+            }])
+            ->orderBy('deleted_at', 'desc')
+            ->paginate($request->per_page ?? 15);
+
+        return response()->json($products);
+    }
+
     // Crear producto con Imagen
     public function store(Request $request)
     {
@@ -62,15 +78,13 @@ class ProductController extends Controller
             'stock'          => 'required|integer|min:0',
             'location'       => 'nullable|string',
             'description'    => 'nullable|string',
-            'image'          => 'nullable|image|max:2048', // Max 2MB
+            'image'          => 'nullable|image|max:2048',
         ]);
 
         DB::beginTransaction();
         try {
-            // 1. Crear el producto
             $product = Product::create($request->all());
 
-            // 2. Si el usuario subió una imagen
             if ($request->hasFile('image')) {
                 $file = $request->file('image');
                 $path = $file->store("products/{$product->id}", 'public');
@@ -84,7 +98,6 @@ class ProductController extends Controller
                 ]);
             }
 
-            // 3. Registrar movimiento de inventario inicial
             if ($product->stock > 0) {
                 InventoryMovement::create([
                     'product_id' => $product->id,
@@ -109,7 +122,7 @@ class ProductController extends Controller
     {
         $product = Product::with(['supplier', 'category', 'images', 'inventoryMovements' => function ($q) {
             $q->latest()->limit(10);
-        }])->findOrFail($id);
+        }])->withTrashed()->findOrFail($id);
 
         return response()->json($product);
     }
@@ -134,7 +147,6 @@ class ProductController extends Controller
             $product->update($request->all());
 
             if ($request->hasFile('image')) {
-                // Borrar imagen principal anterior para no llenar el disco
                 $oldImage = $product->images()->where('is_main', true)->first();
                 if ($oldImage) {
                     $oldPath = str_replace('/storage/', '', $oldImage->url);
@@ -142,7 +154,6 @@ class ProductController extends Controller
                     $oldImage->delete();
                 }
 
-                // Guardar la nueva
                 $file = $request->file('image');
                 $path = $file->store("products/{$product->id}", 'public');
 
@@ -206,18 +217,69 @@ class ProductController extends Controller
         }
     }
 
+    // ELIMINAR PRODUCTO (Soft Delete)
     public function destroy($id)
     {
         $product = Product::findOrFail($id);
 
-        // Seguridad: No borrar si ya se vendió alguna vez
-        if (method_exists($product, 'saleItems') && $product->saleItems()->exists()) {
-            return response()->json([
-                'message' => 'No se puede eliminar: tiene ventas registradas'
-            ], 400);
-        }
+        try {
+            $product->delete();
 
-        $product->delete();
-        return response()->json(['message' => 'Producto eliminado']);
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto eliminado exitosamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar producto: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // RESTAURAR PRODUCTO ELIMINADO
+    public function restore($id)
+    {
+        $product = Product::onlyTrashed()->findOrFail($id);
+        $product->restore();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Producto restaurado exitosamente'
+        ]);
+    }
+
+    // ELIMINAR PERMANENTEMENTE (FORCE DELETE)
+    public function forceDelete($id)
+    {
+        $product = Product::onlyTrashed()->findOrFail($id);
+
+        DB::beginTransaction();
+        try {
+            $product->saleItems()->delete();
+            $product->inventoryMovements()->delete();
+            $product->details()->delete();
+
+            foreach ($product->images as $image) {
+                $relativePath = str_replace('/storage/', '', $image->url);
+                Storage::disk('public')->delete($relativePath);
+                $image->delete();
+            }
+
+            $product->forceDelete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Producto eliminado permanentemente'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al eliminar permanentemente: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }
