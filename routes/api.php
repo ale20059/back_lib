@@ -9,6 +9,7 @@ use App\Http\Controllers\API\SaleController;
 use App\Http\Controllers\API\BarcodeScannerController;
 use App\Http\Controllers\API\ImageController;
 use App\Http\Controllers\API\DashboardController;
+use App\Http\Controllers\API\InternalProductController;
 use App\Http\Controllers\API\InventoryMovementController;
 
 // Rutas públicas
@@ -68,4 +69,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // ===== INVENTARIO =====
     Route::get('/inventory-movements', [InventoryMovementController::class, 'index']);
     Route::get('/inventory-movements/product/{productId}', [InventoryMovementController::class, 'byProduct']);
+
+
+    // ===== PRODUCTOS INTERNOS =====
+    Route::prefix('internal')->group(function () {
+        Route::get('/products', [InternalProductController::class, 'index']);
+        Route::get('/products/categories', [InternalProductController::class, 'categories']);
+        Route::post('/products', [InternalProductController::class, 'store']);
+        Route::get('/products/{id}', [InternalProductController::class, 'show']);
+        Route::put('/products/{id}', [InternalProductController::class, 'update']);
+        Route::delete('/products/{id}', [InternalProductController::class, 'destroy']);
+
+        Route::post('/products/{id}/add-stock', [InternalProductController::class, 'addStock']);
+        Route::post('/products/{id}/use-stock', [InternalProductController::class, 'useStock']);
+        Route::get('/products/{id}/yearly-summary', [InternalProductController::class, 'yearlySummary']);
+        Route::get('/products/{id}/movements/{year}', [InternalProductController::class, 'movementsByYear']);
+    });
 });
