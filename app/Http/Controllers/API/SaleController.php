@@ -47,6 +47,12 @@ class SaleController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'payment_method' => 'required|in:cash,card,transfer',
             'tax' => 'nullable|numeric|min:0',
+            // === NUEVOS CAMPOS DEL PEDIDO ===
+            'grado' => 'nullable|string|max:50',
+            'estudiante' => 'nullable|string|max:100',
+            'talla' => 'nullable|string|max:10',
+            'boleta' => 'nullable|string|max:20',
+            'quien_entrego' => 'nullable|string|max:100'
         ]);
 
         DB::beginTransaction();
@@ -76,13 +82,19 @@ class SaleController extends Controller
             $tax = $request->tax ?? 0;
             $total = $subtotal + $tax;
 
-            // Crear venta
+            // Crear venta con los nuevos campos
             $sale = Sale::create([
                 'user_id' => $request->user()->id,
                 'subtotal' => $subtotal,
                 'tax' => $tax,
                 'total' => $total,
                 'payment_method' => $request->payment_method,
+                // === GUARDAR NUEVOS CAMPOS ===
+                'grado' => $request->grado ?? null,
+                'estudiante' => $request->estudiante ?? null,
+                'talla' => $request->talla ?? null,
+                'boleta' => $request->boleta ?? null,
+                'quien_entrego' => $request->quien_entrego ?? null
             ]);
 
             // Crear items y actualizar stock
@@ -163,7 +175,7 @@ class SaleController extends Controller
                 ]);
             }
 
-            $sale->delete(); // O podrías tener un campo 'cancelled_at'
+            $sale->delete();
 
             DB::commit();
             return response()->json(['message' => 'Venta anulada exitosamente']);
@@ -173,7 +185,7 @@ class SaleController extends Controller
         }
     }
 
-    // En SaleController.php - Método para buscar venta por factura
+    // Buscar venta por factura
     public function findByInvoice($invoiceNumber)
     {
         $sale = Sale::where('invoice_number', $invoiceNumber)
@@ -186,17 +198,16 @@ class SaleController extends Controller
 
         return response()->json([
             'sale' => $sale,
-            'can_refund' => $sale->created_at->diffInDays(now()) <= 7, // 7 días para devolver
+            'can_refund' => $sale->created_at->diffInDays(now()) <= 7,
             'days_left' => 7 - $sale->created_at->diffInDays(now())
         ]);
     }
 
-    // Método para devolver productos específicos de una venta
+    // Devolver productos
     public function refundItems(Request $request, $saleId)
     {
         $sale = Sale::findOrFail($saleId);
 
-        // Verificar tiempo de devolución (ej: 7 días)
         if ($sale->created_at->diffInDays(now()) > 7) {
             return response()->json([
                 'message' => 'Ya pasaron más de 7 días, no se puede devolver'
@@ -217,26 +228,21 @@ class SaleController extends Controller
             foreach ($request->items as $refundItem) {
                 $saleItem = SaleItem::findOrFail($refundItem['sale_item_id']);
 
-                // Verificar que el item pertenezca a la venta
                 if ($saleItem->sale_id != $saleId) {
                     throw new \Exception('Item no pertenece a esta venta');
                 }
 
-                // Verificar cantidad a devolver
                 if ($refundItem['quantity'] > $saleItem->quantity) {
                     throw new \Exception("No se puede devolver más de lo vendido");
                 }
 
-                // Calcular monto a reembolsar
                 $refundAmount = ($saleItem->unit_price / $saleItem->quantity) * $refundItem['quantity'];
                 $refundTotal += $refundAmount;
 
-                // Devolver al inventario
                 $product = $saleItem->product;
                 $product->stock += $refundItem['quantity'];
                 $product->save();
 
-                // Registrar movimiento
                 InventoryMovement::create([
                     'product_id' => $product->id,
                     'type' => 'in',
@@ -245,7 +251,6 @@ class SaleController extends Controller
                     'user_id' => $request->user()->id,
                 ]);
 
-                // Actualizar o eliminar el sale_item
                 if ($refundItem['quantity'] == $saleItem->quantity) {
                     $saleItem->delete();
                 } else {
@@ -255,7 +260,6 @@ class SaleController extends Controller
                 }
             }
 
-            // Actualizar totales de la venta
             $newSubtotal = $sale->items()->sum('subtotal');
             $newTotal = $newSubtotal + $sale->tax;
 
@@ -264,7 +268,6 @@ class SaleController extends Controller
                 'total' => $newTotal
             ]);
 
-            // Crear nota de crédito (opcional)
             $creditNote = [
                 'invoice_number' => $sale->invoice_number,
                 'refund_amount' => $refundTotal,
@@ -286,43 +289,51 @@ class SaleController extends Controller
         }
     }
 
+    // Obtener datos de factura (MODIFICADO con los nuevos campos)
     public function getInvoiceData($id)
     {
-        // Cargamos la venta con toda la información necesaria:
-        // - Los productos vendidos (items)
-        // - El usuario que hizo la venta (cajero)
         $sale = Sale::with(['items.product', 'user'])->findOrFail($id);
 
-        // Estructuramos los datos de forma limpia para el frontend
         $invoiceData = [
             'success' => true,
             'data' => [
-                // Información general de la factura
                 'invoice_number' => $sale->invoice_number,
                 'date' => $sale->created_at->format('d/m/Y H:i:s'),
-                'payment_method' => $sale->payment_method_formatted, // Usamos el accesor del modelo
+                'payment_method' => $sale->payment_method_formatted ?? $sale->payment_method,
 
-                // Información del negocio (¡cámbiala por la tuya!)
+                // Información de la tienda
                 'store' => [
-                    'name' => 'Mi Tienda Genial',
-                    'address' => 'Av. Principal #123, Guatemala',
-                    'phone' => '1234-5678',
-                    'email' => 'info@mitienda.com',
-                    'nit' => '1234567-8', // NIT de Guatemala
+                    'name' => 'KARDEX',
+                    'address' => '3C Callejón | 3-09 Zona 2, Santo Tomás Milpas Altas, Sacatepéqez, Guatemala',
+                    'phone' => '+502 39477441',
+                    'email' => 'kardexsistemasycontroles@gmail.com',
+                    'nit' => '254563354',
                 ],
 
-                // Información del cajero/vendedor
+                // Información del cajero
                 'cashier' => [
-                    'name' => $sale->user->name,
+                    'name' => $sale->user->name ?? 'Admin',
                 ],
 
-                // Lista de productos comprados
+                // === NUEVOS CAMPOS DEL PEDIDO ===
+                'grado' => $sale->grado ?? '---',
+                'estudiante' => $sale->estudiante ?? '---',
+                'talla' => $sale->talla ?? '---',
+                'boleta' => $sale->boleta ?? '---',
+                'quien_entrego' => $sale->quien_entrego ?? '---',
+
+                // Lista de productos
                 'items' => $sale->items->map(function ($item) {
                     return [
                         'name' => $item->product->name,
                         'quantity' => $item->quantity,
                         'unit_price' => $item->unit_price,
                         'subtotal' => $item->subtotal,
+                        'product' => [
+                            'image' => $item->product->image ?? null,
+                            'barcode' => $item->product->barcode ?? null,
+                            'description' => $item->product->description ?? null,
+                        ]
                     ];
                 }),
 
