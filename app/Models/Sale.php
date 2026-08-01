@@ -16,12 +16,6 @@ class Sale extends Model
         'tax',
         'total',
         'payment_method',
-
-        'grado',
-        'estudiante',
-        'talla',
-        'boleta',
-        'quien_entrego'
     ];
 
     protected $casts = [
