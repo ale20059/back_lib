@@ -11,6 +11,8 @@ use App\Http\Controllers\API\ImageController;
 use App\Http\Controllers\API\DashboardController;
 use App\Http\Controllers\API\InternalProductController;
 use App\Http\Controllers\API\InventoryMovementController;
+use App\Http\Controllers\API\OrderController;
+use App\Http\Controllers\API\UserController;
 
 // Rutas públicas
 Route::post('/login', [AuthController::class, 'login']);
@@ -85,4 +87,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/products/{id}/yearly-summary', [InternalProductController::class, 'yearlySummary']);
         Route::get('/products/{id}/movements/{year}', [InternalProductController::class, 'movementsByYear']);
     });
+
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::put('/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::get('/users', [UserController::class, 'index']);
 });
